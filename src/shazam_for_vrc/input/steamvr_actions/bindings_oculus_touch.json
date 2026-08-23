@@ -1,0 +1,30 @@
+{
+  "action_manifest_version": 0,
+  "bindings": {
+    "/actions/shazam": {
+      "chords": [],
+      "haptics": [
+        {
+          "output": "/actions/shazam/out/haptic",
+          "path": "/user/hand/right/output/haptic"
+        }
+      ],
+      "poses": [],
+      "skeleton": [],
+      "sources": [
+        {
+          "inputs": {
+            "click": {
+              "output": "/actions/shazam/in/listen"
+            }
+          },
+          "mode": "button",
+          "path": "/user/hand/right/input/b"
+        }
+      ]
+    }
+  },
+  "controller_type": "oculus_touch",
+  "description": "Hold the right B button to start song recognition.",
+  "name": "Shazam for VRC default"
+}

@@ -1,0 +1,61 @@
+name: Build VPM Listing
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published, edited, deleted]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  listPublishDirectory: Website
+  pathToCi: ci
+
+jobs:
+  build-listing:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check out official VPM listing builder
+        uses: actions/checkout@v4
+        with:
+          repository: vrchat-community/package-list-action
+          path: ${{ env.pathToCi }}
+          clean: false
+
+      - name: Restore package-list cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.pathToCi }}/.nuke/temp
+            ~/.nuget/packages
+          key: ${{ runner.os }}-${{ hashFiles('**/global.json', '**/*.csproj') }}
+
+      - name: Build repository listing
+        run: ${{ env.pathToCi }}/build.cmd BuildRepoListing --root ${{ env.pathToCi }} --list-publish-directory $GITHUB_WORKSPACE/${{ env.listPublishDirectory }} --current-package-name com.szeb95.shazam-for-vrc-avatar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.listPublishDirectory }}
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

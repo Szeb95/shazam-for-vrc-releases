@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "shazam-for-vrc"
+version = "1.2.0"
+description = "On-demand music recognition for VRChat media players"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+  "cryptography>=45,<51",
+  "openvr>=2.12.1401,<3",
+  "platformdirs>=4.3,<5",
+  "PyAudioWPatch>=0.2.12.8,<0.3; sys_platform == 'win32'",
+  "python-osc>=1.9,<2",
+  "shazamio>=0.8,<1",
+  "watchdog>=6,<7",
+  "yt-dlp>=2026.7.15",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pyinstaller>=6.15,<7",
+  "pytest>=8.3,<9",
+  "pytest-cov>=6,<7",
+  "ruff>=0.12,<1",
+]
+
+[project.gui-scripts]
+shazam-for-vrc = "shazam_for_vrc.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/shazam_for_vrc"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

@@ -1,0 +1,18 @@
+{
+  "name": "com.szeb95.shazam-for-vrc-avatar",
+  "displayName": "Shazam for VRC Avatar Button",
+  "version": "1.2.0",
+  "unity": "2022.3",
+  "description": "A drag-and-drop Modular Avatar prefab that adds a Listen for song button and sends the ShazamListen avatar parameter through VRChat OSC.",
+  "author": {
+    "name": "Szeb95",
+    "url": "https://github.com/Szeb95/shazam-for-vrc-releases"
+  },
+  "documentationUrl": "https://github.com/Szeb95/shazam-for-vrc-releases/blob/main/docs/avatar-setup.md",
+  "changelogUrl": "https://github.com/Szeb95/shazam-for-vrc-releases/blob/main/Packages/com.szeb95.shazam-for-vrc-avatar/CHANGELOG.md",
+  "licensesUrl": "https://github.com/Szeb95/shazam-for-vrc-releases/blob/main/Packages/com.szeb95.shazam-for-vrc-avatar/LICENSE.md",
+  "vpmDependencies": {
+    "com.vrchat.avatars": ">=3.7.0 <4.0.0",
+    "nadena.dev.modular-avatar": ">=1.12.1 <2.0.0-a"
+  }
+}

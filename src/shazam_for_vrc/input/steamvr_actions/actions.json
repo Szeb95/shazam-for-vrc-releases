@@ -1,0 +1,37 @@
+{
+  "default_bindings": [
+    {
+      "controller_type": "oculus_touch",
+      "binding_url": "bindings_oculus_touch.json"
+    },
+    {
+      "controller_type": "knuckles",
+      "binding_url": "bindings_knuckles.json"
+    }
+  ],
+  "actions": [
+    {
+      "name": "/actions/shazam/in/listen",
+      "requirement": "suggested",
+      "type": "boolean"
+    },
+    {
+      "name": "/actions/shazam/out/haptic",
+      "type": "vibration"
+    }
+  ],
+  "action_sets": [
+    {
+      "name": "/actions/shazam",
+      "usage": "leftright"
+    }
+  ],
+  "localization": [
+    {
+      "language_tag": "en_us",
+      "/actions/shazam": "Shazam for VRC",
+      "/actions/shazam/in/listen": "Listen for song",
+      "/actions/shazam/out/haptic": "Recognition accepted haptic"
+    }
+  ]
+}

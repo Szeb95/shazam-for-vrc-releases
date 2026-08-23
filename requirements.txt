@@ -1,0 +1,4 @@
+# Runtime dependencies are defined in pyproject.toml.
+# This compatibility file supports tools that expect requirements.txt.
+-e .
+

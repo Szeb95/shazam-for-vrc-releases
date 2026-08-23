@@ -1,0 +1,52 @@
+name: Build Avatar Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Optional existing draft release tag to receive the package files
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build VCC and Unity packages
+        run: python scripts/build_avatar_package.py --output-directory dist/avatar
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shazam-for-vrc-avatar-package
+          path: dist/avatar/*
+          if-no-files-found: error
+
+      - name: Validate draft release version
+        if: inputs.release_tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          version=$(python -c "import json; print(json.load(open('Packages/com.szeb95.shazam-for-vrc-avatar/package.json', encoding='utf-8'))['version'])")
+          if [ "$RELEASE_TAG" != "v$version" ]; then
+            echo "Release tag $RELEASE_TAG does not match avatar package version v$version."
+            exit 1
+          fi
+
+      - name: Add files to existing draft release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: gh release upload "$RELEASE_TAG" dist/avatar/* --clobber

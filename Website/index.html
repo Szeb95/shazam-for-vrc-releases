@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Shazam for VRC Avatar Button</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+      body { margin: 0; background: #10131a; color: #edf2ff; }
+      main { max-width: 680px; margin: 0 auto; padding: 64px 24px; }
+      h1 { margin-bottom: 12px; font-size: clamp(2rem, 7vw, 3.5rem); }
+      p { color: #bdc8df; font-size: 1.08rem; line-height: 1.65; }
+      .actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 32px 0; }
+      a { color: #9fc0ff; }
+      .button { padding: 12px 18px; border-radius: 10px; background: #5a7cf8;
+        color: white; font-weight: 700; text-decoration: none; }
+      .secondary { background: #293247; }
+      code { overflow-wrap: anywhere; color: #d8e4ff; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Shazam for VRC Avatar Button</h1>
+      <p>Add a <strong>Listen for song</strong> button to a VRChat avatar by dragging
+        one prefab under the avatar root. It sends the local <code>ShazamListen</code>
+        parameter to the Shazam for VRC desktop app through VRChat OSC.</p>
+      <div class="actions">
+        <a class="button" href="vcc://vpm/addRepo?url=https%3A%2F%2Fvpm.nadena.dev%2Fvpm.json">1. Add Modular Avatar</a>
+        <a class="button" href="vcc://vpm/addRepo?url=https%3A%2F%2Fszeb95.github.io%2Fshazam-for-vrc-releases%2Findex.json">2. Add to VCC</a>
+        <a class="button secondary" href="https://github.com/Szeb95/shazam-for-vrc-releases/releases/latest">GitHub download</a>
+      </div>
+      <p>Manual VCC repository URL:<br>
+        <code>https://szeb95.github.io/shazam-for-vrc-releases/index.json</code></p>
+      <p><a href="https://github.com/Szeb95/shazam-for-vrc-releases/blob/main/docs/avatar-setup.md">Avatar setup guide</a></p>
+    </main>
+  </body>
+</html>
