@@ -45,7 +45,6 @@ or authentication cookies.
 
 - Windows 11
 - VRChat in desktop or VR mode
-- An internet connection
 
 ## Disclaimer
 
