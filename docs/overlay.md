@@ -10,6 +10,12 @@ the same `ListeningService` without simulating a button click.
 ## Pages
 
 Navigation is shown on the left in a dark Discord/ChatGPT-inspired layout.
+The header includes a **Minimize** control. Minimizing leaves the application
+running, so keyboard, SteamVR, and avatar OSC inputs and configured outputs remain
+active. With **Hide in the system tray when minimized** enabled, the taskbar button
+is hidden and the tray menu provides **Open Shazam for VRC** and **Exit**. Otherwise
+the app remains as a normal taskbar icon. The packaged executable uses the Shazam
+for VRC icon in the window, taskbar, and tray.
 
 ### Listen & Track Log
 
@@ -28,6 +34,8 @@ Navigation is shown on the left in a dark Discord/ChatGPT-inspired layout.
   **✓ Copied** indicator. **Open link** opens the public Twitch
   or YouTube source page when one is safe to retain, otherwise the Shazam track
   page when Shazam provided one.
+- On narrow windows, the right-side actions remain visible and the track name is
+  clipped first. Hovering the name shows its complete text.
 - Raw `grp_` IDs are hidden. **Open group** opens VRChat's group page without the
   application storing VRChat credentials.
 - **Clear log** removes all local entries after confirmation. **Copy whole list**
@@ -54,10 +62,11 @@ recover a time that the player never logged.
 - **Record seconds** accepts 3-60 seconds and defaults to 12.
 - **Clean retries (when fallback is off)** accepts 0-5. Every retry captures a
   fresh clean-stream sample.
-- **Use VRChat/computer audio for the third attempt** is off by default. When
-  enabled, Listen uses two clean attempts and then one default-Windows-output
-  attempt. Unknown-position mixes go directly to this fallback because their
-  current clean-stream position is unavailable.
+- **Use local audio for the final attempt** is off by default. When enabled, Listen
+  uses two clean attempts and one selected local-audio attempt. **VRChat only** is
+  recommended and excludes audio from other programs. **Entire Windows output**
+  is the broader compatibility choice. Unknown-position mixes go directly to the
+  selected source because their current clean-stream position is unavailable.
 - The SteamVR button can use right A, B, thumbstick click, or trigger click.
 - The controller gesture can be a configurable long press or double press.
 - The Windows global shortcut can be changed from F1 through F12.
@@ -65,14 +74,17 @@ recover a time that the player never logged.
 - XSOverlay and VRChat OSC chatbox outputs remain optional.
 - Copied indicators and automatic startup update checks can be disabled.
 - The track log and debug-recording folder can use custom absolute paths.
-- **Always on top** controls the overlay behavior.
+- **Always on top** controls the overlay behavior and is disabled by default for new
+  installations. Existing saved preferences are kept.
+- **Hide in the system tray when minimized** controls whether minimizing removes
+  the taskbar button. It is off by default so the window remains easy to find.
 - **Keep latest recording for debugging** copies the temporary sample to one local
   debug WAV. A later recording replaces it. The UI can play or delete that sample.
 
 Changing history location switches the active history file. Existing history is
 copied into a new file when the selected file does not exist; selecting an existing
 history file loads its contents. Settings themselves stay in the normal per-user
-AppData location so every friend gets independent preferences.
+AppData location.
 
 ### About
 
@@ -107,10 +119,12 @@ Temporary capture audio is deleted when recognition finishes. Debug retention is
 off by default. When enabled, only `last-sample.wav` is retained in the per-user
 application data directory; disabling the setting and saving deletes it.
 
-The computer-audio fallback is a separate opt-in because it can capture VRChat
-voices, world sounds, notifications, and other applications. Its recording follows
-the same temporary deletion rule; enabling the fallback does not automatically
-enable debug retention.
+The local-audio fallback is a separate opt-in. VRChat-only capture may include
+voices, world sounds, and media inside VRChat but excludes other applications. The
+complete Windows-output choice may additionally capture notifications and other
+applications. Both follow the same temporary deletion rule; enabling a fallback
+does not automatically enable debug retention, and the app never silently changes
+from VRChat-only to whole-output recording.
 
 Settings use a standard per-user location supplied by `platformdirs`. History may
 use the default location or the custom JSON path selected by the user. It stores

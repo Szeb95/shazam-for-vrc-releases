@@ -15,9 +15,10 @@ speech, avatar sounds, and other mixed VRChat audio.
 4. `streams.resolver` resolves pages such as Twitch or YouTube to a playable audio
    stream; direct HLS URLs can pass through.
 5. `streams.audio_capture` asks FFmpeg for a short, temporary audio-only sample.
-6. If two clean samples return no match and the user enabled it,
-   `streams.system_audio_capture` records one temporary sample from the default
-   Windows output through WASAPI loopback.
+6. If two clean samples return no match and the user enabled a local-audio attempt,
+   `streams.vrchat_audio_capture` records only VRChat and its child processes by
+   default. The user can explicitly select `streams.system_audio_capture` instead
+   to record the complete default Windows output through WASAPI loopback.
 7. `recognition.shazam` fingerprints the temporary sample through ShazamIO and
    returns a normalized match or no-match result.
 8. Output adapters show the result and may persist metadata in local history.
@@ -57,15 +58,18 @@ fallback behavior.
 
 - SteamVR controller input and XSOverlay VR notification output (implemented).
 - Optional VRChat chatbox OSC track output (implemented).
-- Settings UI, startup integration, and a Windows package.
-- Explicit, optional mixed-output capture after two clean no-matches, or when an
-  unknown-position mix cannot be sampled at its audible moment (implemented).
+- Settings UI and a Windows package (implemented).
+- Optional automatic startup with VRChat or SteamVR (planned).
+- Explicit, optional VRChat-only or mixed-output capture after two clean no-matches,
+  or when an unknown-position mix cannot be sampled at its audible moment
+  (implemented).
 
 ## Privacy and storage
 
 VRChat logs are read locally. Audio samples are temporary and should be deleted
-immediately after recognition. System-output capture is disabled by default
-because it can include voices, world sounds, notifications, and other programs.
+immediately after recognition. Local-audio capture is disabled by default. Its
+VRChat-only mode may include voices and world sounds but excludes other programs;
+the separate whole-output mode may also include notifications and other programs.
 Logs, audio, secrets, and local configuration are excluded from version control.
 
 See [`shazam-recognition.md`](shazam-recognition.md) for the part 04 provider

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "shazam-for-vrc"
-version = "1.2.0"
+version = "1.3.0"
 description = "On-demand music recognition for VRChat media players"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -13,7 +13,10 @@ dependencies = [
   "cryptography>=45,<51",
   "openvr>=2.12.1401,<3",
   "platformdirs>=4.3,<5",
+  "Pillow>=10,<13",
+  "process-audio-capture==1.0.0; sys_platform == 'win32'",
   "PyAudioWPatch>=0.2.12.8,<0.3; sys_platform == 'win32'",
+  "pystray>=0.19.5,<0.20; sys_platform == 'win32'",
   "python-osc>=1.9,<2",
   "shazamio>=0.8,<1",
   "watchdog>=6,<7",

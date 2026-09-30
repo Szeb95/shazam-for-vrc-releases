@@ -9,8 +9,8 @@ def test_exports_current_in_app_notes(tmp_path: Path) -> None:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    output = module.export_release_notes("1.2.0", tmp_path)
+    output = module.export_release_notes("1.3.0", tmp_path)
 
     text = output.read_text(encoding="utf-8")
-    assert "# Shazam for VRC 1.2.0" in text
-    assert "Modular Avatar prefab" in text
+    assert "# Shazam for VRC 1.3.0" in text
+    assert "Hide in system tray" in text

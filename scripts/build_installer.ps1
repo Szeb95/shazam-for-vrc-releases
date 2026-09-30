@@ -13,6 +13,7 @@ $appDirectory = Join-Path $projectRoot "dist\Shazam for VRC"
 $appExecutable = Join-Path $appDirectory "Shazam for VRC.exe"
 $bundledFFmpeg = Join-Path $appDirectory "_internal\ffmpeg.exe"
 $bundledFFprobe = Join-Path $appDirectory "_internal\ffprobe.exe"
+$applicationIcon = Join-Path $projectRoot "Website\favicon.ico"
 $installerScript = Join-Path $projectRoot "packaging\windows\ShazamForVRC.iss"
 $outputDirectory = Join-Path $projectRoot "dist\installer"
 $updateManifestScript = Join-Path $projectRoot "scripts\create_update_manifest.py"
@@ -72,6 +73,9 @@ if (-not (Test-Path -LiteralPath $bundledFFmpeg -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $bundledFFprobe -PathType Leaf)) {
     throw "The standalone application is incomplete because bundled FFprobe is missing."
 }
+if (-not (Test-Path -LiteralPath $applicationIcon -PathType Leaf)) {
+    throw "The application icon was not found: $applicationIcon"
+}
 if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) {
     throw "The project Python environment is missing. Create .venv before building."
 }
@@ -95,6 +99,7 @@ $arguments = @(
     "/DMyAppVersion=$appVersion",
     "/DMyAppSourceDir=$appDirectory",
     "/DMyOutputDir=$outputDirectory",
+    "/DMyAppIcon=$applicationIcon",
     $installerScript
 )
 

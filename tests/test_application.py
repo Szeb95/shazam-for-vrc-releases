@@ -33,6 +33,7 @@ from shazam_for_vrc.streams.resolver import (
     ResolvedStream,
 )
 from shazam_for_vrc.streams.stream_detector import PlaybackType, Provider, Transport
+from shazam_for_vrc.streams.vrchat_audio_capture import FallbackAudioSource
 from shazam_for_vrc.vrchat.log_reader import LogSnapshot, MediaInfo, WorldInfo
 from shazam_for_vrc.vrchat.player_tracker import (
     MediaCandidate,
@@ -245,6 +246,7 @@ def test_uses_computer_audio_only_after_two_clean_no_matches(tmp_path: Path) -> 
                 record_seconds=12,
                 retry_count=5,
                 use_system_audio_fallback=True,
+                fallback_audio_source=FallbackAudioSource.WINDOWS_OUTPUT,
             ),
             progress.append,
         )
@@ -271,6 +273,74 @@ def test_uses_computer_audio_only_after_two_clean_no_matches(tmp_path: Path) -> 
         ListeningStage.COMPLETE,
     ]
     assert all(item.maximum_attempts == 3 for item in progress)
+
+
+def test_uses_vrchat_process_audio_without_using_windows_output(tmp_path: Path) -> None:
+    clean_capture_count = 0
+    vrchat_capture_count = 0
+    progress: list[ListeningProgress] = []
+
+    @contextmanager
+    def capture_clean(
+        _stream: object,
+        *,
+        duration_seconds: float,
+        ffmpeg_executable: str,
+    ) -> Iterator[AudioSample]:
+        nonlocal clean_capture_count
+        clean_capture_count += 1
+        path = tmp_path / f"clean-vrchat-{clean_capture_count}.wav"
+        path.write_bytes(b"RIFF-clean-audio")
+        try:
+            yield AudioSample(path, duration_seconds, 44_100, 1, path.stat().st_size)
+        finally:
+            path.unlink()
+
+    @contextmanager
+    def capture_vrchat(*, duration_seconds: float) -> Iterator[AudioSample]:
+        nonlocal vrchat_capture_count
+        vrchat_capture_count += 1
+        path = tmp_path / "vrchat-only.wav"
+        path.write_bytes(b"RIFF-vrchat-audio")
+        try:
+            yield AudioSample(path, duration_seconds, 48_000, 2, path.stat().st_size)
+        finally:
+            path.unlink()
+
+    def must_not_capture_windows_output(**_kwargs: object) -> object:
+        raise AssertionError("VRChat-only mode must not record the complete Windows output")
+
+    service = ListeningService(
+        snapshot_reader=snapshot,
+        media_selector=select_active_media,
+        stream_resolver=lambda _candidate: resolved_stream(),
+        capture_factory=capture_clean,
+        system_audio_capture_factory=must_not_capture_windows_output,  # type: ignore[arg-type]
+        vrchat_audio_capture_factory=capture_vrchat,
+        recognizer=FakeRecognizer([no_match(), no_match(), match()]),
+        ffmpeg_executable="fake-ffmpeg",
+    )
+
+    outcome = asyncio.run(
+        service.listen(
+            ListenOptions(
+                use_system_audio_fallback=True,
+                fallback_audio_source=FallbackAudioSource.VRCHAT,
+            ),
+            progress.append,
+        )
+    )
+
+    assert outcome.recognition.is_match
+    assert outcome.recording_attempts == 3
+    assert outcome.used_system_audio_fallback
+    assert outcome.used_vrchat_audio_fallback
+    assert outcome.fallback_audio_source is FallbackAudioSource.VRCHAT
+    assert outcome.notice is not None and "not other applications" in outcome.notice
+    assert clean_capture_count == 2
+    assert vrchat_capture_count == 1
+    assert ListeningStage.RECORDING_VRCHAT_AUDIO in [item.stage for item in progress]
+    assert ListeningStage.RECORDING_SYSTEM_AUDIO not in [item.stage for item in progress]
 
 
 def test_does_not_record_computer_audio_when_second_clean_attempt_matches(
@@ -308,7 +378,12 @@ def test_does_not_record_computer_audio_when_second_clean_attempt_matches(
     )
 
     outcome = asyncio.run(
-        service.listen(ListenOptions(use_system_audio_fallback=True))
+        service.listen(
+            ListenOptions(
+                use_system_audio_fallback=True,
+                fallback_audio_source=FallbackAudioSource.WINDOWS_OUTPUT,
+            )
+        )
     )
 
     assert outcome.recognition.is_match
@@ -357,7 +432,12 @@ def test_uses_computer_audio_when_long_mix_player_time_is_unavailable(
     )
 
     outcome = asyncio.run(
-        service.listen(ListenOptions(use_system_audio_fallback=True))
+        service.listen(
+            ListenOptions(
+                use_system_audio_fallback=True,
+                fallback_audio_source=FallbackAudioSource.WINDOWS_OUTPUT,
+            )
+        )
     )
 
     assert outcome.recognition.is_match
@@ -630,6 +710,7 @@ def test_keeps_only_public_provider_pages_as_shareable_source_links() -> None:
         {"retry_count": -1},
         {"retry_count": 6},
         {"use_system_audio_fallback": 1},
+        {"fallback_audio_source": "microphone"},
         {"keep_last_sample": 1},
     ],
 )

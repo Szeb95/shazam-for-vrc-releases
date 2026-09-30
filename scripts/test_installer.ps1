@@ -33,10 +33,20 @@ $existingInstall = foreach ($registryRoot in $uninstallRegistryRoots) {
         ForEach-Object { Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue } |
         Where-Object { $_.DisplayName -like "Shazam for VRC*" }
 }
-if ($existingInstall) {
+$defaultInstallDirectory = Join-Path `
+    ([Environment]::GetFolderPath("LocalApplicationData")) `
+    "Programs\Shazam for VRC"
+$defaultInstalledExecutable = Join-Path $defaultInstallDirectory "Shazam for VRC.exe"
+$runningApplication = Get-Process -Name "Shazam for VRC" -ErrorAction SilentlyContinue
+if (
+    $existingInstall -or
+    (Test-Path -LiteralPath $defaultInstalledExecutable -PathType Leaf) -or
+    $runningApplication
+) {
     throw (
-        "An installed copy of Shazam for VRC already exists. The isolated test would share " +
-        "its Windows app identity. Uninstall that copy first or run this test in Windows Sandbox."
+        "An installed or running copy of Shazam for VRC already exists. The isolated test " +
+        "would share its Windows app identity. Uninstall and close that copy first, or run " +
+        "this test in Windows Sandbox."
     )
 }
 

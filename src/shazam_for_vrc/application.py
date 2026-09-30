@@ -38,6 +38,10 @@ from shazam_for_vrc.streams.resolver import (
 )
 from shazam_for_vrc.streams.stream_detector import PlaybackType, Provider, classify_url
 from shazam_for_vrc.streams.system_audio_capture import capture_system_audio
+from shazam_for_vrc.streams.vrchat_audio_capture import (
+    FallbackAudioSource,
+    capture_vrchat_audio,
+)
 from shazam_for_vrc.vrchat.log_reader import LogSnapshot, WorldInfo, read_current_state
 from shazam_for_vrc.vrchat.player_tracker import MediaCandidate, select_active_media
 
@@ -51,6 +55,7 @@ class ListeningStage(StrEnum):
     FINDING_PLAYER = "finding_player"
     RESOLVING_STREAM = "resolving_stream"
     RECORDING = "recording"
+    RECORDING_VRCHAT_AUDIO = "recording_vrchat_audio"
     RECORDING_SYSTEM_AUDIO = "recording_system_audio"
     RECOGNIZING = "recognizing"
     RETRYING = "retrying"
@@ -82,6 +87,7 @@ class ListenOptions:
     record_seconds: float = 12.0
     retry_count: int = 1
     use_system_audio_fallback: bool = False
+    fallback_audio_source: FallbackAudioSource = FallbackAudioSource.VRCHAT
     keep_last_sample: bool = False
     debug_sample_path: Path | None = None
 
@@ -103,6 +109,11 @@ class ListenOptions:
             raise ValueError("keep_last_sample must be true or false")
         if not isinstance(self.use_system_audio_fallback, bool):
             raise ValueError("use_system_audio_fallback must be true or false")
+        try:
+            fallback_audio_source = FallbackAudioSource(self.fallback_audio_source)
+        except (TypeError, ValueError):
+            raise ValueError("fallback_audio_source is not supported") from None
+        object.__setattr__(self, "fallback_audio_source", fallback_audio_source)
         if self.debug_sample_path is not None and not isinstance(
             self.debug_sample_path,
             Path,
@@ -123,7 +134,17 @@ class ListeningOutcome:
     result_kind: ListeningResultKind = ListeningResultKind.TRACK
     media_title: str | None = None
     notice: str | None = None
-    used_system_audio_fallback: bool = False
+    fallback_audio_source: FallbackAudioSource | None = None
+
+    @property
+    def used_system_audio_fallback(self) -> bool:
+        """Remain compatible with existing outputs that treat either local source alike."""
+
+        return self.fallback_audio_source is not None
+
+    @property
+    def used_vrchat_audio_fallback(self) -> bool:
+        return self.fallback_audio_source is FallbackAudioSource.VRCHAT
 
 
 class DebugSampleError(RuntimeError):
@@ -139,6 +160,7 @@ MediaSelector = Callable[[LogSnapshot], MediaCandidate]
 StreamResolver = Callable[[MediaCandidate], ResolvedStream]
 CaptureFactory = Callable[..., AbstractContextManager[AudioSample]]
 SystemAudioCaptureFactory = Callable[..., AbstractContextManager[AudioSample]]
+VRChatAudioCaptureFactory = Callable[..., AbstractContextManager[AudioSample]]
 ProgressCallback = Callable[[ListeningProgress], None]
 SampleRetainer = Callable[[Path, Path | None], Path]
 PositionEstimator = Callable[[MediaCandidate, ResolvedStream], PlaybackPositionEstimate | None]
@@ -254,6 +276,7 @@ class ListeningService:
         stream_resolver: StreamResolver = resolve_stream,
         capture_factory: CaptureFactory = capture_audio,
         system_audio_capture_factory: SystemAudioCaptureFactory = capture_system_audio,
+        vrchat_audio_capture_factory: VRChatAudioCaptureFactory = capture_vrchat_audio,
         recognizer: RecognitionProvider | None = None,
         sample_retainer: SampleRetainer = retain_last_sample,
         ffmpeg_executable: str | None = None,
@@ -264,6 +287,7 @@ class ListeningService:
         self._stream_resolver = stream_resolver
         self._capture_factory = capture_factory
         self._system_audio_capture_factory = system_audio_capture_factory
+        self._vrchat_audio_capture_factory = vrchat_audio_capture_factory
         self._sample_retainer = sample_retainer
         self._ffmpeg_executable = ffmpeg_executable or _default_ffmpeg_executable()
         self._recognizer = recognizer or ShazamRecognizer(ffmpeg_executable=self._ffmpeg_executable)
@@ -351,11 +375,11 @@ class ListeningService:
                 progress_callback,
                 ListeningStage.RETRYING,
                 "The clean stream cannot be matched to the player's current time. Using the "
-                "explicit computer-audio fallback now...",
+                f"explicit {_fallback_source_label(options.fallback_audio_source)} now...",
                 attempt=maximum_attempts,
                 maximum_attempts=maximum_attempts,
             )
-            return await self._listen_with_system_audio(
+            return await self._listen_with_fallback_audio(
                 options,
                 snapshot=snapshot,
                 stream=stream,
@@ -446,7 +470,7 @@ class ListeningService:
                 ListeningStage.RETRYING,
                 (
                     "No clean-stream match after two attempts. Preparing the final "
-                    "computer-audio attempt..."
+                    f"{_fallback_source_label(options.fallback_audio_source)}..."
                     if attempt == clean_attempts
                     else "No match. Preparing a fresh clean-stream recording..."
                 ),
@@ -454,7 +478,7 @@ class ListeningService:
                 maximum_attempts=maximum_attempts,
             )
 
-        return await self._listen_with_system_audio(
+        return await self._listen_with_fallback_audio(
             options,
             snapshot=snapshot,
             stream=stream,
@@ -466,7 +490,7 @@ class ListeningService:
             retained_sample=retained_sample,
         )
 
-    async def _listen_with_system_audio(
+    async def _listen_with_fallback_audio(
         self,
         options: ListenOptions,
         *,
@@ -480,17 +504,31 @@ class ListeningService:
         retained_sample: Path | None,
         unpositioned_mix_title: str | None = None,
     ) -> ListeningOutcome:
-        """Run the single explicit final attempt against Windows output audio."""
+        """Run the single explicit final attempt against the selected local source."""
+
+        source = options.fallback_audio_source
+        vrchat_only = source is FallbackAudioSource.VRCHAT
+        capture_factory = (
+            self._vrchat_audio_capture_factory
+            if vrchat_only
+            else self._system_audio_capture_factory
+        )
+        stage = (
+            ListeningStage.RECORDING_VRCHAT_AUDIO
+            if vrchat_only
+            else ListeningStage.RECORDING_SYSTEM_AUDIO
+        )
+        source_label = _fallback_source_label(source)
 
         _emit(
             progress_callback,
-            ListeningStage.RECORDING_SYSTEM_AUDIO,
-            f"Recording {float(options.record_seconds):g} seconds from the default Windows "
-            f"output (final attempt {attempt}/{maximum_attempts})...",
+            stage,
+            f"Recording {float(options.record_seconds):g} seconds from {source_label} "
+            f"(final attempt {attempt}/{maximum_attempts})...",
             attempt=attempt,
             maximum_attempts=maximum_attempts,
         )
-        with self._system_audio_capture_factory(
+        with capture_factory(
             duration_seconds=options.record_seconds,
         ) as sample:
             if options.keep_last_sample:
@@ -501,7 +539,7 @@ class ListeningService:
             _emit(
                 progress_callback,
                 ListeningStage.RECOGNIZING,
-                f"Recognizing computer audio (final attempt {attempt}/{maximum_attempts})...",
+                f"Recognizing {source_label} (final attempt {attempt}/{maximum_attempts})...",
                 attempt=attempt,
                 maximum_attempts=maximum_attempts,
             )
@@ -509,7 +547,7 @@ class ListeningService:
 
         recording_attempts = prior_recordings + 1
         message = (
-            "Song recognized from the final computer-audio attempt."
+            f"Song recognized from the final {source_label}."
             if result.is_match
             else f"No song recognized after {recording_attempts} recording attempt(s)."
         )
@@ -521,8 +559,11 @@ class ListeningService:
             maximum_attempts=maximum_attempts,
         )
         notice = (
-            "Recognition used the final computer-audio fallback. That recording may include "
-            "VRChat voices, world sounds, and audio from other applications."
+            "Recognition used VRChat-only process audio. It can include voices, world sounds, "
+            "and media rendered inside VRChat, but not other applications."
+            if vrchat_only
+            else "Recognition used the complete Windows-output fallback. That recording may "
+            "include VRChat voices, world sounds, notifications, and other applications."
         )
         result_kind = _result_kind(stream)
         media_title = _identified_mix_title(stream)
@@ -530,8 +571,8 @@ class ListeningService:
             result_kind = ListeningResultKind.MIX
             media_title = unpositioned_mix_title
             notice = (
-                "VRChat did not expose the mix position, and the computer-audio fallback also "
-                "returned no track match."
+                "VRChat did not expose the mix position, and the selected local-audio "
+                "fallback also returned no track match."
             )
         return ListeningOutcome(
             recognition=result,
@@ -543,8 +584,14 @@ class ListeningService:
             result_kind=result_kind,
             media_title=media_title,
             notice=notice,
-            used_system_audio_fallback=True,
+            fallback_audio_source=source,
         )
+
+
+def _fallback_source_label(source: FallbackAudioSource) -> str:
+    if source is FallbackAudioSource.VRCHAT:
+        return "VRChat-only audio"
+    return "the complete Windows output"
 
 
 def _exact_metadata_result(stream: ResolvedStream) -> RecognitionResult | None:

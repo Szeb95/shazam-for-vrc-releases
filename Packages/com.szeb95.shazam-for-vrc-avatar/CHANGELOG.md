@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.0
+
+- Desktop compatibility release; the avatar prefab and its OSC behavior are unchanged.
+
 ## 1.2.0
 
 - Added the drag-and-drop `Shazam for VRC Avatar Button` prefab.

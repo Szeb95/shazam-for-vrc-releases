@@ -33,7 +33,7 @@ VCC manages compatible versions of those dependencies.
 
 ## Install the Unity package
 
-As a fallback, download `Shazam-for-VRC-Avatar-1.2.0.unitypackage` from the same
+As a fallback, download `Shazam-for-VRC-Avatar-1.3.0.unitypackage` from the same
 GitHub release as the Windows installer. Install Modular Avatar first, import the
 Unity package, then find the prefab under **Assets > Shazam for VRC Avatar >
 Runtime > Prefabs** and drag it under the avatar root.
@@ -48,9 +48,9 @@ Runtime > Prefabs** and drag it under the avatar root.
    playing.
 
 The avatar button starts the same workflow as the desktop Listen button. If the
-desktop setting **Use VRChat/computer audio for the third attempt** is enabled,
-that workflow uses two clean-stream attempts followed by one mixed Windows-output
-attempt. The avatar prefab itself still has no audio access.
+desktop setting **Use local audio for the final attempt** is enabled, that workflow
+uses two clean-stream attempts followed by one attempt from the selected local
+source. The avatar prefab itself still has no audio access.
 
 New desktop installations already have the avatar OSC trigger enabled with the
 matching `ShazamListen` name and receive port `9001`. Updated installations keep

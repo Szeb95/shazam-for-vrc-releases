@@ -13,10 +13,12 @@ Capture defaults to confirmed livestreams. The application may explicitly permit
 prerecorded input only when it also supplies an automatically selected seek point.
 Unknown playback states remain refused by default.
 
-`shazam_for_vrc.streams.system_audio_capture` is a separate, explicit Windows
-fallback. It records the default output device through WASAPI loopback only after
-the user enables the setting. Keeping it separate prevents clean-stream callers
-from accidentally recording mixed computer audio.
+Local-audio capture is kept separate from clean-stream capture. The recommended
+`shazam_for_vrc.streams.vrchat_audio_capture` source uses Windows process loopback
+to include VRChat and its child processes while excluding other programs. The
+explicit `shazam_for_vrc.streams.system_audio_capture` source records the complete
+default Windows output through WASAPI loopback. Neither source is used until the
+user enables the setting.
 
 ## Interface
 
@@ -47,30 +49,33 @@ block. The entire temporary directory is removed on normal exit, caller errors,
 FFmpeg errors, validation errors, and timeouts. A caller that explicitly wants to
 retain a diagnostic sample must copy it somewhere safe while the context is active.
 
-## Final computer-audio attempt
+## Final local-audio attempt
 
-With **Use VRChat/computer audio for the third attempt** enabled,
+With **Use local audio for the final attempt** enabled,
 `ListeningService` follows this bounded order:
 
 1. record and recognize one clean player-stream sample;
 2. record and recognize a fresh clean player-stream sample after a no-match;
-3. record and recognize one sample from the default Windows output after a second
+3. record and recognize one sample from the selected local source after a second
    no-match.
 
 The normal retry-count setting applies when this fallback is off. When it is on,
-the order above is fixed at two clean attempts plus one mixed-output attempt. If a
+the order above is fixed at two clean attempts plus one local-audio attempt. If a
 long YouTube mix has no usable player-time estimate, clean seeking cannot represent
-the audible moment, so the service goes directly to the explicit computer-audio
+the audible moment, so the service goes directly to the explicit local-audio
 fallback.
 
-The loopback sample is signed 16-bit mono WAV at the active output device's native
-sample rate. Empty and silent recordings are rejected with an actionable error.
-Its temporary directory is removed on success and failure. It is copied to
-`last-sample.wav` only when the independent debug-retention setting is enabled.
+VRChat-only mode targets `VRChat.exe` and its child processes. It can include the
+world player, voices, and other sounds rendered inside VRChat, but it excludes
+audio from unrelated programs. Entire Windows output records the complete output
+mix and may also include notifications and other applications. The application
+never silently changes from the selected VRChat-only source to whole-output audio.
 
-This fallback captures the complete output mix. It may therefore contain VRChat
-voices, world sounds, notifications, and audio from other applications. It is off
-by default and should be enabled only when the user accepts that tradeoff.
+Empty and silent recordings are rejected with an actionable error. Temporary
+directories are removed on success and failure. A sample is copied to
+`last-sample.wav` only when the independent debug-retention setting is enabled.
+Local-audio capture is off by default and should be enabled only when the user
+accepts the privacy tradeoff of the selected source.
 
 ## FFmpeg input and output
 
@@ -138,7 +143,7 @@ python -m ruff check src tests
 To run only the capture tests:
 
 ```powershell
-python -m pytest -q tests\test_audio_capture.py tests\test_system_audio_capture.py
+python -m pytest -q tests\test_audio_capture.py tests\test_system_audio_capture.py tests\test_vrchat_audio_capture.py
 ```
 
 ## Manual testing
@@ -175,6 +180,7 @@ with capture_audio(stream) as sample:
 Do not add URL or header printing to manual diagnostics. A retained sample may
 contain private listening information; keep one only through a deliberate export.
 
-Automated tests use a fake WASAPI backend and never record the build computer's
+Automated tests use fake loopback backends and never record the build computer's
 real output. A real fallback test should be initiated only through the saved UI
-setting while non-private audio is playing.
+setting while non-private audio is playing. VRChat must be running and producing
+audio before the VRChat-only session can be selected.

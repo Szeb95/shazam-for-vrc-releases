@@ -16,6 +16,33 @@ class ReleaseNotes:
 
 RELEASE_NOTES = (
     ReleaseNotes(
+        version="1.3.0",
+        title="System tray, responsive overlay, and VRChat-only audio",
+        changes=(
+            "Added an optional Hide in system tray when minimized setting with Open and Exit "
+            "tray actions; configured inputs and outputs stay active while hidden.",
+            "Added the Shazam for VRC icon to the window, taskbar, system tray, and packaged "
+            "executable.",
+            "Reduced work during window resizing by coalescing repeated layout and scrolling "
+            "updates.",
+            "Kept track-row action buttons visible when the overlay becomes narrow; long "
+            "track names are clipped first and remain available as a hover tooltip.",
+            "Added a VRChat-only choice for the optional final local-audio attempt so audio "
+            "from other programs is excluded.",
+            "Kept Entire Windows output as a separate explicit choice for users who need the "
+            "broader compatibility fallback.",
+            "Preserved the whole-output source for existing 1.2 installations that had its "
+            "computer-audio setting enabled; new configurations recommend VRChat only.",
+            "Changed Always on top to off by default for new installations; existing saved "
+            "preferences are preserved.",
+            "Reduced the download and installed size by using the verified FFmpeg Essentials "
+            "build and compiling dependencies without their raw source trees.",
+            "Expanded the offline release self-test to verify Shazam, YouTube and Twitch "
+            "resolution, SteamVR, tray support, both audio-capture modes, and required media "
+            "formats before an installer is accepted.",
+        ),
+    ),
+    ReleaseNotes(
         version="1.2.0",
         title="Avatar button and final audio fallback",
         changes=(

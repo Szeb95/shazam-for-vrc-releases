@@ -19,3 +19,32 @@ def test_all_release_version_sources_match() -> None:
     assert installer_match.group(1) == __version__
     assert RELEASE_NOTES[0].version == __version__
     assert RELEASE_NOTES[0].changes
+
+
+def test_installer_uses_the_shared_application_icon() -> None:
+    root = Path(__file__).parents[1]
+    installer = (root / "packaging/windows/ShazamForVRC.iss").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SetupIconFile={#MyAppIcon}" in installer
+
+
+def test_installer_accepts_its_existing_dedicated_install_directory() -> None:
+    root = Path(__file__).parents[1]
+    installer = (root / "packaging/windows/ShazamForVRC.iss").read_text(
+        encoding="utf-8"
+    )
+
+    assert "DirExistsWarning=no" in installer
+
+
+def test_installer_refreshes_windows_icons_after_installation() -> None:
+    root = Path(__file__).parents[1]
+    installer = (root / "packaging/windows/ShazamForVRC.iss").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SHCNE_ASSOCCHANGED" in installer
+    assert "if CurStep = ssPostInstall" in installer
+    assert "SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, 0, 0)" in installer

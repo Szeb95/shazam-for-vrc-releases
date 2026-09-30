@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from shazam_for_vrc.config import AppConfig, ConfigError, load_config, save_config
+from shazam_for_vrc.streams.vrchat_audio_capture import FallbackAudioSource
 
 
 def test_missing_config_uses_overlay_defaults(tmp_path: Path) -> None:
@@ -13,8 +14,10 @@ def test_missing_config_uses_overlay_defaults(tmp_path: Path) -> None:
     assert config.record_seconds == 12.0
     assert config.retry_count == 1
     assert not config.system_audio_fallback_enabled
+    assert config.fallback_audio_source is FallbackAudioSource.VRCHAT
     assert not config.keep_last_sample
-    assert config.always_on_top
+    assert not config.always_on_top
+    assert not config.minimize_to_tray
     assert config.show_copied_indicators
     assert config.automatic_update_checks
     assert config.steamvr_input_enabled
@@ -39,8 +42,10 @@ def test_config_round_trip(tmp_path: Path) -> None:
         record_seconds=18.5,
         retry_count=3,
         system_audio_fallback_enabled=True,
+        fallback_audio_source=FallbackAudioSource.WINDOWS_OUTPUT,
         keep_last_sample=True,
-        always_on_top=False,
+        always_on_top=True,
+        minimize_to_tray=True,
         show_copied_indicators=False,
         automatic_update_checks=False,
         steamvr_input_enabled=False,
@@ -65,6 +70,21 @@ def test_config_round_trip(tmp_path: Path) -> None:
     assert not path.with_suffix(".tmp").exists()
 
 
+def test_existing_enabled_computer_audio_setting_keeps_its_legacy_source(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "version-1.2-config.json"
+    path.write_text(
+        json.dumps({"system_audio_fallback_enabled": True}),
+        encoding="utf-8",
+    )
+
+    config = load_config(path)
+
+    assert config.system_audio_fallback_enabled
+    assert config.fallback_audio_source is FallbackAudioSource.WINDOWS_OUTPUT
+
+
 @pytest.mark.parametrize(
     "values",
     [
@@ -74,6 +94,8 @@ def test_config_round_trip(tmp_path: Path) -> None:
         {"retry_count": 6},
         {"keep_last_sample": "yes"},
         {"system_audio_fallback_enabled": "yes"},
+        {"fallback_audio_source": "microphone"},
+        {"minimize_to_tray": "yes"},
         {"show_copied_indicators": "yes"},
         {"automatic_update_checks": 1},
         {"controller_hold_seconds": 0.2},
@@ -113,6 +135,7 @@ def test_invalid_saved_config_reports_actionable_error(
         {"record_seconds": True},
         {"retry_count": True},
         {"always_on_top": 1},
+        {"minimize_to_tray": 1},
         {"controller_hold_seconds": True},
         {"osc_input_port": True},
     ],

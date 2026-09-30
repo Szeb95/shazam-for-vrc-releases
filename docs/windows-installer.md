@@ -59,14 +59,14 @@ Run the tests, then build the complete release:
 The automatic-update release files are:
 
 ```text
-dist\installer\Shazam-for-VRC-Setup-1.2.0.exe
-dist\installer\Shazam-for-VRC-Setup-1.2.0.exe.sha256.txt
+dist\installer\Shazam-for-VRC-Setup-1.3.0.exe
+dist\installer\Shazam-for-VRC-Setup-1.3.0.exe.sha256.txt
 dist\installer\Shazam-for-VRC-update.json
 dist\installer\Shazam-for-VRC-update.json.sig
-dist\installer\GITHUB-RELEASE-NOTES-1.2.0.md
-dist\avatar\com.szeb95.shazam-for-vrc-avatar-1.2.0.zip
-dist\avatar\Shazam-for-VRC-Avatar-1.2.0.unitypackage
-dist\avatar\Shazam-for-VRC-Avatar-1.2.0-SHA256.txt
+dist\installer\GITHUB-RELEASE-NOTES-1.3.0.md
+dist\avatar\com.szeb95.shazam-for-vrc-avatar-1.3.0.zip
+dist\avatar\Shazam-for-VRC-Avatar-1.3.0.unitypackage
+dist\avatar\Shazam-for-VRC-Avatar-1.3.0-SHA256.txt
 dist\avatar\package.json
 ```
 
@@ -74,7 +74,7 @@ Send the setup `.exe`. Send the small checksum text file as well, preferably in 
 separate message. The recipient can verify it in PowerShell:
 
 ```powershell
-Get-FileHash ".\Shazam-for-VRC-Setup-1.2.0.exe" -Algorithm SHA256
+Get-FileHash ".\Shazam-for-VRC-Setup-1.3.0.exe" -Algorithm SHA256
 ```
 
 The displayed hash should match the value in the `.sha256.txt` file. The setup
@@ -96,7 +96,7 @@ or alter VRChat.
 
 ```powershell
 .\scripts\test_installer.ps1 `
-    -SetupPath ".\dist\installer\Shazam-for-VRC-Setup-1.2.0.exe"
+    -SetupPath ".\dist\installer\Shazam-for-VRC-Setup-1.3.0.exe"
 ```
 
 A passing run ends with `Installer test passed`. The temporary test folder is
@@ -110,12 +110,13 @@ Windows app identity. Uninstall the existing copy first or use Windows Sandbox.
 Test the final file, not only the unpacked app folder:
 
 1. Run the installer and choose a different folder on the destination page.
-2. Confirm the Start menu shortcut opens Shazam for VRC 1.2.0.
+2. Confirm the Start menu shortcut opens Shazam for VRC 1.3.0.
 3. With VRChat playing supported media, use **Check current player** and then **Listen**.
 4. Confirm a recognition result or an actionable no-match/error message appears.
-5. With non-private test audio, enable **Use VRChat/computer audio for the third
-   attempt**, force or wait for two clean no-matches, and confirm the final-attempt
-   status appears. Disable the setting again if mixed-output capture is unwanted.
+5. With non-private test audio, enable **Use local audio for the final attempt**,
+   force or wait for two clean no-matches, and confirm the selected-source status
+   appears. Test **VRChat only** and **Entire Windows output** deliberately, then
+   disable the setting again if local-audio capture is unwanted.
 6. If used, test the F-key shortcut, SteamVR controller action, avatar OSC input,
    XSOverlay, and VRChat chatbox output.
 7. Close the app and run `unins000.exe` from the install folder.
@@ -128,17 +129,17 @@ Test the final file, not only the unpacked app folder:
 2. Add that version and every user-visible change at the top of
    `src\shazam_for_vrc\release_notes.py`. Tests reject mismatched versions.
 3. Run all tests and `scripts\build_release.ps1`.
-4. In `Szeb95/shazam-for-vrc-releases`, create a draft release with tag `v1.2.0`.
-5. Paste `GITHUB-RELEASE-NOTES-1.2.0.md`; it is generated from the exact notes
+4. In `Szeb95/shazam-for-vrc-releases`, create a draft release with tag `v1.3.0`.
+5. Paste `GITHUB-RELEASE-NOTES-1.3.0.md`; it is generated from the exact notes
    shown inside the app.
 6. Upload the installer, checksum, update manifest, signature, four avatar package
    files, and avatar checksum listed above. The **Build Avatar Package** GitHub
-   action can upload those four files to the draft when given tag `v1.2.0`.
+   action can upload those four files to the draft when given tag `v1.3.0`.
 7. Verify the filenames and publish the draft. Release immutability protects the
    published assets from later replacement.
 8. Confirm the **Build VPM Listing** action succeeds and that
    `https://szeb95.github.io/shazam-for-vrc-releases/index.json` lists version
-   `1.2.0`. GitHub Pages must use **GitHub Actions** as its source.
+   `1.3.0`. GitHub Pages must use **GitHub Actions** as its source.
 
 Version 1.1.0 must still be installed manually because older versions do not contain
 the updater. Releases after 1.1.0 can be offered inside the application.

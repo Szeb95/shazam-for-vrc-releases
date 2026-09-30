@@ -11,6 +11,11 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $pythonPath = Join-Path $projectRoot ".venv\Scripts\python.exe"
 $pyprojectPath = Join-Path $projectRoot "pyproject.toml"
 $pythonBuildBootstrap = Join-Path $projectRoot "scripts\python_build_bootstrap"
+$applicationIcon = Join-Path $projectRoot "Website\favicon.ico"
+
+if (-not (Test-Path -LiteralPath $applicationIcon -PathType Leaf)) {
+    throw "The application icon was not found: $applicationIcon"
+}
 
 function Remove-GeneratedDirectory {
     param([string]$RelativePath)
@@ -180,6 +185,17 @@ $ffprobeExecutable = Resolve-FFprobeExecutable `
     -RequestedPath $FFprobePath `
     -FFmpegExecutablePath $ffmpegExecutable
 $ffmpegLicense = Resolve-FFmpegLicense -RequestedPath $FFmpegLicensePath -ExecutablePath $ffmpegExecutable
+$openVrRuntime = Join-Path `
+    $projectRoot `
+    ".venv\Lib\site-packages\openvr\libopenvr_api_64.dll"
+$processAudioRuntime = Join-Path `
+    $projectRoot `
+    ".venv\Lib\site-packages\process_audio_capture\ProcessAudioCapture.dll"
+foreach ($runtime in @($openVrRuntime, $processAudioRuntime)) {
+    if (-not (Test-Path -LiteralPath $runtime -PathType Leaf)) {
+        throw "A required Windows runtime was not found: $runtime"
+    }
+}
 
 $versionFileDirectory = Join-Path $projectRoot "build\packaging"
 New-Item -ItemType Directory -Path $versionFileDirectory -Force | Out-Null
@@ -229,14 +245,15 @@ $arguments = @(
     "--windowed",
     "--onedir",
     "--name", "Shazam for VRC",
+    "--icon", $applicationIcon,
     "--version-file", $versionFile,
     "--paths", (Join-Path $projectRoot "src"),
-    "--collect-all", "openvr",
-    "--collect-all", "pyaudiowpatch",
-    "--collect-all", "shazamio",
-    "--collect-all", "yt_dlp",
+    "--runtime-hook", (Join-Path $pythonBuildBootstrap "sitecustomize.py"),
     "--add-data",
     "$(Join-Path $projectRoot 'src\shazam_for_vrc\input\steamvr_actions');shazam_for_vrc\input\steamvr_actions",
+    "--add-data", "$applicationIcon;Website",
+    "--add-binary", "$openVrRuntime;openvr",
+    "--add-binary", "$processAudioRuntime;process_audio_capture",
     "--add-binary", "$ffmpegExecutable;.",
     "--add-binary", "$ffprobeExecutable;.",
     "--add-data", "$ffmpegLicense;licenses\ffmpeg"
@@ -264,6 +281,12 @@ try {
 $outputExecutable = Join-Path $projectRoot "dist\Shazam for VRC\Shazam for VRC.exe"
 $bundledFFmpeg = Join-Path $projectRoot "dist\Shazam for VRC\_internal\ffmpeg.exe"
 $bundledFFprobe = Join-Path $projectRoot "dist\Shazam for VRC\_internal\ffprobe.exe"
+$bundledOpenVr = Join-Path `
+    $projectRoot `
+    "dist\Shazam for VRC\_internal\openvr\libopenvr_api_64.dll"
+$bundledProcessAudio = Join-Path `
+    $projectRoot `
+    "dist\Shazam for VRC\_internal\process_audio_capture\ProcessAudioCapture.dll"
 if (-not (Test-Path -LiteralPath $outputExecutable -PathType Leaf)) {
     throw "The executable build finished without producing $outputExecutable"
 }
@@ -272,6 +295,23 @@ if (-not (Test-Path -LiteralPath $bundledFFmpeg -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $bundledFFprobe -PathType Leaf)) {
     throw "The executable build finished without bundling FFprobe at $bundledFFprobe"
+}
+if (-not (Test-Path -LiteralPath $bundledOpenVr -PathType Leaf)) {
+    throw "The executable build finished without bundling OpenVR at $bundledOpenVr"
+}
+if (-not (Test-Path -LiteralPath $bundledProcessAudio -PathType Leaf)) {
+    throw "The executable build finished without bundling process audio at $bundledProcessAudio"
+}
+
+Write-Host "Running the packaged offline self-test..."
+$selfTestProcess = Start-Process `
+    -FilePath $outputExecutable `
+    -ArgumentList @("--self-test") `
+    -WindowStyle Hidden `
+    -Wait `
+    -PassThru
+if ($selfTestProcess.ExitCode -ne 0) {
+    throw "The packaged application self-test failed with exit code $($selfTestProcess.ExitCode)."
 }
 
 Write-Host "Built standalone application: $outputExecutable"

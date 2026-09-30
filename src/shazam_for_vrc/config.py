@@ -10,6 +10,8 @@ from pathlib import Path
 
 from platformdirs import user_config_path
 
+from shazam_for_vrc.streams.vrchat_audio_capture import FallbackAudioSource
+
 APP_NAME = "Shazam for VRC"
 DEFAULT_RECORD_SECONDS = 12.0
 MIN_RECORD_SECONDS = 3.0
@@ -44,8 +46,10 @@ class AppConfig:
     record_seconds: float = DEFAULT_RECORD_SECONDS
     retry_count: int = DEFAULT_RETRY_COUNT
     system_audio_fallback_enabled: bool = False
+    fallback_audio_source: FallbackAudioSource = FallbackAudioSource.VRCHAT
     keep_last_sample: bool = False
-    always_on_top: bool = True
+    always_on_top: bool = False
+    minimize_to_tray: bool = False
     show_copied_indicators: bool = True
     automatic_update_checks: bool = True
     steamvr_input_enabled: bool = True
@@ -83,8 +87,15 @@ class AppConfig:
             raise ValueError("keep_last_sample must be true or false")
         if not isinstance(self.system_audio_fallback_enabled, bool):
             raise ValueError("system_audio_fallback_enabled must be true or false")
+        try:
+            fallback_audio_source = FallbackAudioSource(self.fallback_audio_source)
+        except (TypeError, ValueError):
+            raise ValueError("fallback_audio_source is not supported") from None
+        object.__setattr__(self, "fallback_audio_source", fallback_audio_source)
         if not isinstance(self.always_on_top, bool):
             raise ValueError("always_on_top must be true or false")
+        if not isinstance(self.minimize_to_tray, bool):
+            raise ValueError("minimize_to_tray must be true or false")
         if not isinstance(self.show_copied_indicators, bool):
             raise ValueError("show_copied_indicators must be true or false")
         if not isinstance(self.automatic_update_checks, bool):
@@ -162,15 +173,23 @@ def load_config(path: Path | None = None) -> AppConfig:
         raw = json.loads(text)
         if not isinstance(raw, dict):
             raise ValueError("settings root must be an object")
+        local_audio_enabled = raw.get("system_audio_fallback_enabled", False)
+        legacy_audio_source = (
+            FallbackAudioSource.WINDOWS_OUTPUT
+            if local_audio_enabled is True
+            else FallbackAudioSource.VRCHAT
+        )
         return AppConfig(
             record_seconds=raw.get("record_seconds", DEFAULT_RECORD_SECONDS),
             retry_count=raw.get("retry_count", DEFAULT_RETRY_COUNT),
-            system_audio_fallback_enabled=raw.get(
-                "system_audio_fallback_enabled",
-                False,
+            system_audio_fallback_enabled=local_audio_enabled,
+            fallback_audio_source=raw.get(
+                "fallback_audio_source",
+                legacy_audio_source,
             ),
             keep_last_sample=raw.get("keep_last_sample", False),
-            always_on_top=raw.get("always_on_top", True),
+            always_on_top=raw.get("always_on_top", False),
+            minimize_to_tray=raw.get("minimize_to_tray", False),
             show_copied_indicators=raw.get("show_copied_indicators", True),
             automatic_update_checks=raw.get("automatic_update_checks", True),
             steamvr_input_enabled=raw.get("steamvr_input_enabled", True),

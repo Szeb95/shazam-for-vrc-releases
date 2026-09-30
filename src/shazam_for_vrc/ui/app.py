@@ -73,6 +73,11 @@ from shazam_for_vrc.streams.playback_position import format_media_time
 from shazam_for_vrc.streams.resolver import StreamResolutionError
 from shazam_for_vrc.streams.stream_detector import PlaybackType, Provider
 from shazam_for_vrc.streams.system_audio_capture import SystemAudioCaptureError
+from shazam_for_vrc.streams.vrchat_audio_capture import (
+    FallbackAudioSource,
+    VRChatAudioCaptureError,
+)
+from shazam_for_vrc.ui.tray import SystemTray, application_icon_path
 from shazam_for_vrc.updates import (
     DownloadedUpdate,
     UpdateCheckResult,
@@ -108,6 +113,10 @@ CONTROLLER_BUTTON_LABELS = {
 TRIGGER_MODE_LABELS = {
     "long_press": "Long press",
     "double_press": "Double press",
+}
+FALLBACK_AUDIO_SOURCE_LABELS = {
+    FallbackAudioSource.VRCHAT.value: "VRChat only (recommended)",
+    FallbackAudioSource.WINDOWS_OUTPUT.value: "Entire Windows output",
 }
 
 
@@ -148,6 +157,45 @@ class _HoverTooltip:
         if self._window is not None:
             self._window.destroy()
             self._window = None
+
+
+class _DebouncedCanvasLayout:
+    """Coalesce resize events so large Tk pages do not relayout every pixel."""
+
+    def __init__(self, canvas: tk.Canvas, window: int, *, delay_ms: int = 50) -> None:
+        self.canvas = canvas
+        self.window = window
+        self.delay_ms = delay_ms
+        self._pending_width: int | None = None
+        self._applied_width: int | None = None
+        self._width_after_id: str | None = None
+        self._scroll_after_id: str | None = None
+
+    def request_width(self, event: tk.Event[tk.Misc]) -> None:
+        self._pending_width = max(1, int(event.width))
+        if self._width_after_id is None:
+            self._width_after_id = self.canvas.after(self.delay_ms, self._flush_width)
+
+    def request_scrollregion(self, _event: tk.Event[tk.Misc] | None = None) -> None:
+        if self._scroll_after_id is None:
+            self._scroll_after_id = self.canvas.after(
+                self.delay_ms,
+                self._flush_scrollregion,
+            )
+
+    def _flush_width(self) -> None:
+        self._width_after_id = None
+        width = self._pending_width
+        if width is None or width == self._applied_width:
+            return
+        self._applied_width = width
+        with suppress(tk.TclError):
+            self.canvas.itemconfigure(self.window, width=width)
+
+    def _flush_scrollregion(self) -> None:
+        self._scroll_after_id = None
+        with suppress(tk.TclError):
+            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
 
 class OverlayApp:
@@ -194,6 +242,7 @@ class OverlayApp:
         self._available_update: UpdateInfo | None = None
         self._last_listening_stage = ListeningStage.FINDING_PLAYER
         self._log_filter_buttons: dict[str, ttk.Button] = {}
+        self._canvas_layouts: list[_DebouncedCanvasLayout] = []
         startup_messages: list[str] = []
 
         try:
@@ -217,8 +266,12 @@ class OverlayApp:
         self.system_audio_fallback_enabled = tk.BooleanVar(
             value=self.config.system_audio_fallback_enabled
         )
+        self.fallback_audio_source = tk.StringVar(
+            value=FALLBACK_AUDIO_SOURCE_LABELS[self.config.fallback_audio_source.value]
+        )
         self.keep_last_sample = tk.BooleanVar(value=self.config.keep_last_sample)
         self.always_on_top = tk.BooleanVar(value=self.config.always_on_top)
+        self.minimize_to_tray = tk.BooleanVar(value=self.config.minimize_to_tray)
         self.show_copied_indicators = tk.BooleanVar(
             value=self.config.show_copied_indicators
         )
@@ -266,6 +319,12 @@ class OverlayApp:
         )
         self.update_progress_text = tk.StringVar(value="")
 
+        self._system_tray = SystemTray(
+            on_restore=self._queue_restore_from_tray,
+            on_exit=self._queue_exit_from_tray,
+            on_failure=self._queue_tray_failure,
+        )
+
         self._configure_window()
         self._configure_styles()
         self._build_shell()
@@ -284,6 +343,9 @@ class OverlayApp:
         self.root.configure(background=BACKGROUND)
         self.root.attributes("-topmost", self.config.always_on_top)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.root.bind("<Unmap>", self._on_root_unmap, add="+")
+        with suppress(tk.TclError):
+            self.root.iconbitmap(str(application_icon_path()))
 
     def _configure_styles(self) -> None:
         style = ttk.Style(self.root)
@@ -414,15 +476,38 @@ class OverlayApp:
         content = tk.Frame(shell, background=BACKGROUND)
         content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+        header = tk.Frame(sidebar, background=SIDEBAR)
+        header.pack(fill=tk.X, padx=(20, 10), pady=(25, 28))
+        header.columnconfigure(0, weight=1)
+
         tk.Label(
-            sidebar,
+            header,
             text="SHAZAM\nFOR VRC",
             background=SIDEBAR,
             foreground=TEXT,
             justify=tk.LEFT,
             anchor=tk.W,
             font=("Segoe UI Semibold", 15),
-        ).pack(fill=tk.X, padx=20, pady=(25, 28))
+        ).grid(row=0, column=0, sticky=tk.W)
+
+        minimize_button = tk.Button(
+            header,
+            text="—",
+            command=self._minimize_to_taskbar,
+            background=SIDEBAR,
+            activebackground=PANEL,
+            foreground=MUTED,
+            activeforeground=TEXT,
+            relief=tk.FLAT,
+            borderwidth=0,
+            highlightthickness=0,
+            padx=8,
+            pady=6,
+            font=("Segoe UI Semibold", 12),
+            cursor="hand2",
+        )
+        minimize_button.grid(row=0, column=1, sticky=tk.NE)
+        _HoverTooltip(minimize_button, "Minimize to the taskbar or system tray")
 
         for page_name, label in (
             ("listen", "Listen & Track Log"),
@@ -496,6 +581,11 @@ class OverlayApp:
                 background=PANEL if active else SIDEBAR,
                 foreground=TEXT if active else MUTED,
             )
+
+    def _minimize_to_taskbar(self) -> None:
+        """Minimize while leaving inputs and outputs running."""
+
+        self.root.iconify()
 
     def _page_heading(self, parent: tk.Widget, title: str, subtitle: str) -> None:
         tk.Label(
@@ -652,8 +742,13 @@ class OverlayApp:
             anchor=tk.NW,
         )
         self.history_canvas.configure(yscrollcommand=history_scrollbar.set)
-        self.history_rows.bind("<Configure>", self._resize_history_scrollregion)
-        self.history_canvas.bind("<Configure>", self._resize_history_width)
+        self._history_layout = _DebouncedCanvasLayout(
+            self.history_canvas,
+            self._history_window,
+        )
+        self._canvas_layouts.append(self._history_layout)
+        self.history_rows.bind("<Configure>", self._history_layout.request_scrollregion)
+        self.history_canvas.bind("<Configure>", self._history_layout.request_width)
         self.history_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         history_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self._bind_mousewheel_tree(history_container, self.history_canvas)
@@ -685,6 +780,7 @@ class OverlayApp:
             "Recognition, advanced inputs and outputs, and portable storage locations.",
         )
         self._build_recognition_settings(inner)
+        self._build_window_settings(inner)
         self._build_history_settings(inner)
         self._build_input_settings(inner)
         self._build_output_settings(inner)
@@ -715,8 +811,8 @@ class OverlayApp:
         body = self._section(
             parent,
             "Recognition",
-            "Try clean player audio first, with an optional final attempt using the audio "
-            "currently playing through Windows.",
+            "Try clean player audio first, with an optional final attempt using a selected "
+            "local audio source.",
         )
         self._field_label(body, "Record seconds", 0, 0)
         duration = ttk.Spinbox(
@@ -749,7 +845,7 @@ class OverlayApp:
         keep_sample.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(14, 0))
         system_audio_fallback = ttk.Checkbutton(
             body,
-            text="Use VRChat/computer audio for the third attempt",
+            text="Use local audio for the final attempt",
             variable=self.system_audio_fallback_enabled,
             style="Dark.TCheckbutton",
         )
@@ -760,13 +856,24 @@ class OverlayApp:
             sticky=tk.W,
             pady=(14, 0),
         )
+        self._field_label(body, "Fallback capture source", 4, 0, pady=(14, 4))
+        fallback_audio_source = ttk.Combobox(
+            body,
+            values=list(FALLBACK_AUDIO_SOURCE_LABELS.values()),
+            textvariable=self.fallback_audio_source,
+            state="readonly",
+            width=28,
+            style="Dark.TCombobox",
+        )
+        fallback_audio_source.grid(row=5, column=0, columnspan=2, sticky=tk.W)
         tk.Label(
             body,
             text=(
                 "When enabled, Listen makes two clean-stream attempts, then records the "
-                "default Windows output once. For a mix whose player time is unavailable, "
-                "it goes directly to this fallback. The recording may include VRChat voices, "
-                "world sounds, notifications, and other applications. "
+                "selected local source once. VRChat only excludes audio from other programs, "
+                "but can still include voices and world sounds inside VRChat. Entire Windows "
+                "output also includes notifications and other applications. For a mix whose "
+                "player time is unavailable, Listen goes directly to this fallback. "
                 "The temporary recording is deleted after recognition unless debug retention "
                 "is enabled."
             ),
@@ -776,7 +883,22 @@ class OverlayApp:
             anchor=tk.W,
             wraplength=760,
             font=("Segoe UI", 8),
-        ).grid(row=4, column=0, columnspan=3, sticky=tk.W, pady=(4, 0))
+        ).grid(row=6, column=0, columnspan=3, sticky=tk.W, pady=(4, 0))
+        for widget in (
+            duration,
+            retries,
+            keep_sample,
+            system_audio_fallback,
+            fallback_audio_source,
+        ):
+            self._register_setting(widget)
+
+    def _build_window_settings(self, parent: tk.Widget) -> None:
+        body = self._section(
+            parent,
+            "Window behavior",
+            "Choose whether minimizing keeps a taskbar button or uses the system tray.",
+        )
         topmost = ttk.Checkbutton(
             body,
             text="Keep app always on top",
@@ -784,15 +906,29 @@ class OverlayApp:
             command=self._apply_topmost,
             style="Dark.TCheckbutton",
         )
-        topmost.grid(row=2, column=2, sticky=tk.W, pady=(14, 0))
-        for widget in (
-            duration,
-            retries,
-            keep_sample,
-            system_audio_fallback,
-            topmost,
-        ):
-            self._register_setting(widget)
+        topmost.pack(anchor=tk.W)
+        minimize_to_tray = ttk.Checkbutton(
+            body,
+            text="Hide in the system tray when minimized",
+            variable=self.minimize_to_tray,
+            style="Dark.TCheckbutton",
+        )
+        minimize_to_tray.pack(anchor=tk.W, pady=(10, 0))
+        tk.Label(
+            body,
+            text=(
+                "When enabled, use the tray icon beside the Windows clock to reopen or exit. "
+                "Listening shortcuts and configured outputs stay active while hidden."
+            ),
+            background=PANEL,
+            foreground=FAINT,
+            justify=tk.LEFT,
+            anchor=tk.W,
+            wraplength=760,
+            font=("Segoe UI", 8),
+        ).pack(fill=tk.X, pady=(4, 0))
+        self._register_setting(topmost)
+        self._register_setting(minimize_to_tray)
 
     def _build_history_settings(self, parent: tk.Widget) -> None:
         body = self._section(
@@ -1001,8 +1137,7 @@ class OverlayApp:
         body = self._section(
             parent,
             "Storage locations",
-            "Leave a field empty to use Windows' normal per-user AppData location. "
-            "Each friend can choose their own locations after receiving the app.",
+            "Leave a field empty to use Windows' normal per-user AppData location.",
         )
         self._field_label(body, "Track log file", 0, 0)
         history_entry = ttk.Entry(
@@ -1095,7 +1230,8 @@ class OverlayApp:
             "records a short clean sample from the player stream, and asks Shazam's online "
             "recognition service to identify the song. It avoids recording voices and world "
             "audio when a supported clean stream is available. An explicit setting can use "
-            "the complete Windows output as one final fallback attempt.\n\n"
+            "VRChat-only process audio or the complete Windows output as one final fallback "
+            "attempt.\n\n"
             "Recognition uses ShazamIO to communicate with Shazam's service. This is not an "
             "official Shazam or Apple application. Recognition can fail or return no match "
             "because of network problems, service changes, songs missing from the catalogue, "
@@ -1123,8 +1259,10 @@ class OverlayApp:
             text=(
                 "• VRChat logs are read locally and are never copied into the track log.\n"
                 "• Temporary audio is deleted unless debug retention is enabled.\n"
-                "• The optional computer-audio fallback may capture voices, world sounds, "
-                "notifications, and other applications.\n"
+                "• VRChat-only fallback audio may include voices and world sounds, but it "
+                "excludes other programs.\n"
+                "• Entire Windows output may additionally include notifications and other "
+                "applications, and must be selected explicitly.\n"
                 "• History stores track details and VRChat context where you choose.\n"
                 "• XSOverlay and VRChat OSC outputs stay on the local computer."
             ),
@@ -1224,14 +1362,10 @@ class OverlayApp:
         inner = tk.Frame(canvas, background=BACKGROUND, padx=28, pady=24)
         window = canvas.create_window((0, 0), window=inner, anchor=tk.NW)
         canvas.configure(yscrollcommand=scrollbar.set)
-        inner.bind(
-            "<Configure>",
-            lambda _event: canvas.configure(scrollregion=canvas.bbox("all")),
-        )
-        canvas.bind(
-            "<Configure>",
-            lambda event: canvas.itemconfigure(window, width=event.width),
-        )
+        layout = _DebouncedCanvasLayout(canvas, window)
+        self._canvas_layouts.append(layout)
+        inner.bind("<Configure>", layout.request_scrollregion)
+        canvas.bind("<Configure>", layout.request_width)
         canvas.bind(
             "<MouseWheel>",
             lambda event: self._scroll_canvas(event, canvas),
@@ -1276,12 +1410,6 @@ class OverlayApp:
 
     def _register_setting(self, widget: tk.Widget, idle_state: str = "normal") -> None:
         self._settings_widgets.append((widget, idle_state))
-
-    def _resize_history_scrollregion(self, _event: tk.Event[tk.Misc]) -> None:
-        self.history_canvas.configure(scrollregion=self.history_canvas.bbox("all"))
-
-    def _resize_history_width(self, event: tk.Event[tk.Misc]) -> None:
-        self.history_canvas.itemconfigure(self._history_window, width=event.width)
 
     def _toggle_log_option(self, variable: tk.BooleanVar) -> None:
         variable.set(not variable.get())
@@ -1344,6 +1472,7 @@ class OverlayApp:
             row.pack(fill=tk.X, pady=(0, 8), padx=(0, 8))
             title_row = tk.Frame(row, background=PANEL)
             title_row.pack(fill=tk.X)
+            title_row.columnconfigure(1, weight=1, minsize=0)
             badge_foreground = "#ffb74d" if entry.kind is TrackLogKind.ERROR else ACCENT
             tk.Label(
                 title_row,
@@ -1353,21 +1482,24 @@ class OverlayApp:
                 padx=7,
                 pady=2,
                 font=("Segoe UI Semibold", 8),
-            ).pack(side=tk.LEFT, padx=(0, 8))
-            tk.Label(
+            ).grid(row=0, column=0, sticky=tk.W, padx=(0, 8))
+            title_label = tk.Label(
                 title_row,
                 text=entry.primary_text,
                 background=PANEL,
                 foreground=TEXT,
                 anchor=tk.W,
                 font=("Segoe UI Semibold", 11),
-            ).pack(side=tk.LEFT, fill=tk.X, expand=True)
-            if entry.notice:
-                self._add_notice_icon(title_row, entry.notice)
+            )
+            title_label.grid(row=0, column=1, sticky=tk.EW)
+            _HoverTooltip(title_label, entry.primary_text)
+
+            action_row = tk.Frame(title_row, background=PANEL)
+            action_row.grid(row=0, column=2, sticky=tk.E, padx=(8, 0))
 
             if entry.is_copyable:
                 tk.Label(
-                    title_row,
+                    action_row,
                     text=(
                         "✓ Copied"
                         if self.config.show_copied_indicators and entry.copied_at
@@ -1380,25 +1512,28 @@ class OverlayApp:
                     anchor=tk.E,
                 ).pack(side=tk.LEFT, padx=(8, 0))
                 ttk.Button(
-                    title_row,
+                    action_row,
                     text="Copy track",
                     command=lambda item=entry: self._copy_entry(item),
                     style="Secondary.TButton",
                 ).pack(side=tk.LEFT, padx=(6, 0))
                 if entry.link:
                     ttk.Button(
-                        title_row,
+                        action_row,
                         text="Open link",
                         command=lambda item=entry: self._open_entry_link(item),
                         style="Secondary.TButton",
                     ).pack(side=tk.LEFT, padx=(6, 0))
                 if entry.group_url:
                     ttk.Button(
-                        title_row,
+                        action_row,
                         text="Open group",
                         command=lambda item=entry: self._open_group_link(item),
                         style="Secondary.TButton",
                     ).pack(side=tk.LEFT, padx=(6, 0))
+
+            if entry.notice:
+                self._add_notice_icon(action_row, entry.notice)
 
             if entry.kind is TrackLogKind.ERROR and entry.error_message:
                 tk.Label(
@@ -1590,12 +1725,20 @@ class OverlayApp:
             TRIGGER_MODE_LABELS,
             self.controller_trigger_mode.get(),
         )
+        fallback_audio_source = FallbackAudioSource(
+            _value_for_label(
+                FALLBACK_AUDIO_SOURCE_LABELS,
+                self.fallback_audio_source.get(),
+            )
+        )
         return AppConfig(
             record_seconds=record_seconds,
             retry_count=retry_count,
             system_audio_fallback_enabled=self.system_audio_fallback_enabled.get(),
+            fallback_audio_source=fallback_audio_source,
             keep_last_sample=self.keep_last_sample.get(),
             always_on_top=self.always_on_top.get(),
+            minimize_to_tray=self.minimize_to_tray.get(),
             show_copied_indicators=self.show_copied_indicators.get(),
             automatic_update_checks=self.automatic_update_checks.get(),
             steamvr_input_enabled=self.steamvr_input_enabled.get(),
@@ -1653,6 +1796,45 @@ class OverlayApp:
 
     def _apply_topmost(self) -> None:
         self.root.attributes("-topmost", self.always_on_top.get())
+
+    def _on_root_unmap(self, _event: tk.Event[tk.Misc]) -> None:
+        if self.minimize_to_tray.get():
+            self.root.after_idle(self._hide_minimized_window_in_tray)
+
+    def _hide_minimized_window_in_tray(self) -> None:
+        if self.root.state() != "iconic" or not self.minimize_to_tray.get():
+            return
+        if self._system_tray.show():
+            self.root.withdraw()
+
+    def _queue_restore_from_tray(self) -> None:
+        with suppress(tk.TclError):
+            self.root.after(0, self._restore_from_tray)
+
+    def _queue_exit_from_tray(self) -> None:
+        with suppress(tk.TclError):
+            self.root.after(0, self._exit_from_tray)
+
+    def _queue_tray_failure(self) -> None:
+        with suppress(tk.TclError):
+            self.root.after(0, self._restore_after_tray_failure)
+
+    def _restore_from_tray(self) -> None:
+        self._system_tray.hide()
+        self.root.deiconify()
+        self.root.lift()
+        self._apply_topmost()
+
+    def _exit_from_tray(self) -> None:
+        self._restore_from_tray()
+        self._on_close()
+
+    def _restore_after_tray_failure(self) -> None:
+        self.root.deiconify()
+        self.root.lift()
+        self.status_text.set(
+            "The system-tray icon could not stay active; the window was restored."
+        )
 
     def _open_player_debug(self) -> None:
         window = self._player_debug_window
@@ -1969,6 +2151,7 @@ class OverlayApp:
             record_seconds=config.record_seconds,
             retry_count=config.retry_count,
             use_system_audio_fallback=config.system_audio_fallback_enabled,
+            fallback_audio_source=config.fallback_audio_source,
             keep_last_sample=config.keep_last_sample,
             debug_sample_path=self.debug_sample_path,
         )
@@ -2080,7 +2263,8 @@ class OverlayApp:
             )
             saved = self._prepend_log_entry(entry)
             status = (
-                f"No track found from computer audio; added mix: {entry.title}"
+                f"No track found from {_outcome_fallback_label(outcome)}; added mix: "
+                f"{entry.title}"
                 if outcome.used_system_audio_fallback
                 else f"Added mix: {entry.title}"
             )
@@ -2091,7 +2275,8 @@ class OverlayApp:
                 Notification(
                     title="Mix",
                     content=(
-                        f"{entry.title}. Computer-audio fallback also found no track."
+                        f"{entry.title}. {_outcome_fallback_label(outcome).capitalize()} also "
+                        "found no track."
                         if outcome.used_system_audio_fallback
                         else f"{entry.title}. Current track unavailable: mix position unknown."
                     ),
@@ -2104,7 +2289,7 @@ class OverlayApp:
         elif result.track is None:
             message = (
                 "No song found after 3 attempts: 2 clean-stream recordings and 1 "
-                "VRChat/computer-audio recording."
+                f"{_outcome_fallback_label(outcome)} recording."
                 if outcome.used_system_audio_fallback
                 else f"No song found after {outcome.recording_attempts} recording attempt(s)."
             )
@@ -2154,7 +2339,7 @@ class OverlayApp:
                 )
             else:
                 status_prefix = (
-                    "Recognized from VRChat/computer audio"
+                    f"Recognized from {_outcome_fallback_label(outcome)}"
                     if outcome.used_system_audio_fallback
                     else "Recognized"
                 )
@@ -2162,7 +2347,7 @@ class OverlayApp:
             self._send_notification(
                 Notification(
                     title=(
-                        "Track recognized from computer audio"
+                        f"Track recognized from {_outcome_fallback_label(outcome)}"
                         if outcome.used_system_audio_fallback
                         else "Track recognized"
                     ),
@@ -2186,9 +2371,13 @@ class OverlayApp:
             "Player time unavailable"
             if isinstance(error, PlayerTimeUnavailableError)
             else (
-                "Computer audio unavailable"
-                if isinstance(error, SystemAudioCaptureError)
-                else "Listening error"
+                "VRChat audio unavailable"
+                if isinstance(error, VRChatAudioCaptureError)
+                else (
+                    "Computer audio unavailable"
+                    if isinstance(error, SystemAudioCaptureError)
+                    else "Listening error"
+                )
             )
         )
         self.status_text.set(message)
@@ -2227,6 +2416,8 @@ class OverlayApp:
             return "Finding player"
         if isinstance(error, StreamResolutionError):
             return "Resolving stream"
+        if isinstance(error, VRChatAudioCaptureError):
+            return "Recording VRChat audio"
         if isinstance(error, SystemAudioCaptureError):
             return "Recording computer audio"
         if isinstance(error, AudioCaptureError):
@@ -2497,9 +2688,16 @@ class OverlayApp:
             )
             return
         self._stop_input_listeners()
+        self._system_tray.stop()
         if self._player_debug_window is not None:
             self._close_player_debug()
         self.root.destroy()
+
+
+def _outcome_fallback_label(outcome: ListeningOutcome) -> str:
+    if outcome.fallback_audio_source is FallbackAudioSource.VRCHAT:
+        return "VRChat-only audio"
+    return "the complete Windows output"
 
 
 def _chatbox_track_context(

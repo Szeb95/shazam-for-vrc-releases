@@ -27,6 +27,8 @@ an explicit fallback.
 - Log actionable errors instead of silently ignoring failures.
 - Add tests for parsers, URL classification, player selection, and configuration.
 - Prefer small, focused changes and run the relevant tests before handoff.
+- Keep **Always on top** disabled by default for new installations; users may enable it in
+  Settings when they want it.
 
 ## Package ownership
 
@@ -42,4 +44,3 @@ an explicit fallback.
 1. Livestream recognition from URLs found in VRChat logs.
 2. Better active-player selection and prerecorded media positioning.
 3. SteamVR input, VR output, UI, packaging, and optional audio fallback.
-
